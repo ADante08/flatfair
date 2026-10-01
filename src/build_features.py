@@ -38,13 +38,9 @@ print(
 
 # ==================================================
 # NATIONAL TRANSACTION VOLUME
-#
-# IMPORTANT:
-# Calculate this BEFORE filtering to 3/4/5 room,
-# so it represents the whole HDB resale market.
 # ==================================================
 
-print("\nBuilding national transaction-volume features...")
+print("\nBuilding national transaction volume...")
 
 volume = (
     market
@@ -62,44 +58,6 @@ volume = (
 )
 
 
-# Current 3-month average:
-#
-# t, t-1, t-2
-
-volume["volume_3m_avg"] = (
-    volume["transaction_volume"]
-    .rolling(
-        window=3,
-        min_periods=3
-    )
-    .mean()
-)
-
-
-# Compare the latest 3 months against
-# the preceding 3 months:
-#
-# recent:   t, t-1, t-2
-# previous: t-3, t-4, t-5
-
-volume["volume_growth_3m"] = (
-    volume["volume_3m_avg"]
-    / volume["volume_3m_avg"].shift(3)
-    - 1
-)
-
-
-print(
-    volume[
-        [
-            "month",
-            "transaction_volume",
-            "volume_growth_3m"
-        ]
-    ].tail()
-)
-
-
 # ==================================================
 # LOAD HDB RESALE PRICE INDEX
 # ==================================================
@@ -114,13 +72,6 @@ rpi["index"] = pd.to_numeric(
     rpi["index"]
 )
 
-
-# Convert values such as:
-#
-# 2025-Q3
-#
-# into Pandas quarterly periods.
-
 rpi["quarter"] = pd.PeriodIndex(
     rpi["quarter"],
     freq="Q"
@@ -131,16 +82,10 @@ rpi = rpi.sort_values(
 )
 
 
-# ==================================================
-# RPI GROWTH FEATURES
-# ==================================================
+# Quarterly RPI growth
 
 rpi["rpi_quarterly_growth"] = (
     rpi["index"].pct_change(1)
-)
-
-rpi["rpi_yoy_growth"] = (
-    rpi["index"].pct_change(4)
 )
 
 rpi = rpi.rename(
@@ -150,20 +95,8 @@ rpi = rpi.rename(
 )
 
 
-print(
-    rpi[
-        [
-            "quarter",
-            "hdb_rpi",
-            "rpi_quarterly_growth",
-            "rpi_yoy_growth"
-        ]
-    ].tail()
-)
-
-
 # ==================================================
-# KEEP CORE FLAT TYPES
+# KEEP MAIN FLAT TYPES
 # ==================================================
 
 market = market[
@@ -174,10 +107,7 @@ market = market[
 
 
 # ==================================================
-# BUILD COMPLETE MONTHLY PANEL
-#
-# Every town × flat type gets one row for
-# every calendar month.
+# COMPLETE MONTHLY PANEL
 # ==================================================
 
 print("\nBuilding complete monthly panel...")
@@ -198,14 +128,11 @@ groups = (
     .drop_duplicates()
 )
 
-panel = (
-    groups
-    .merge(
-        pd.DataFrame(
-            {"month": all_months}
-        ),
-        how="cross"
-    )
+panel = groups.merge(
+    pd.DataFrame(
+        {"month": all_months}
+    ),
+    how="cross"
 )
 
 
@@ -223,9 +150,6 @@ panel = panel.merge(
     how="left"
 )
 
-
-# No transaction row means zero transactions.
-
 panel["transaction_count"] = (
     panel["transaction_count"]
     .fillna(0)
@@ -237,34 +161,23 @@ panel["transaction_count"] = (
 # ==================================================
 
 panel = panel.merge(
-    volume[
-        [
-            "month",
-            "transaction_volume",
-            "volume_growth_3m"
-        ]
-    ],
+    volume,
     on="month",
     how="left"
 )
 
 
 # ==================================================
-# ATTACH PREVIOUS COMPLETED QUARTER RPI
+# MERGE HDB RPI
 #
-# THIS IS IMPORTANT FOR LEAKAGE.
+# Use previous completed quarter to avoid leakage.
 #
 # Example:
-#
-# Oct 2025 belongs to Q4.
-#
-# We attach Q3 2025,
-# because Q4 is not yet completed.
+# October 2025 -> use 2025 Q3 RPI
 # ==================================================
 
 panel["rpi_quarter"] = (
-    panel["month"]
-    .dt.to_period("Q")
+    panel["month"].dt.to_period("Q")
     - 1
 )
 
@@ -273,8 +186,7 @@ panel = panel.merge(
         [
             "quarter",
             "hdb_rpi",
-            "rpi_quarterly_growth",
-            "rpi_yoy_growth"
+            "rpi_quarterly_growth"
         ]
     ],
     left_on="rpi_quarter",
@@ -291,7 +203,7 @@ panel = panel.drop(
 
 
 # ==================================================
-# SORT BEFORE CREATING LAGS
+# SORT PANEL
 # ==================================================
 
 panel = panel.sort_values(
@@ -300,17 +212,25 @@ panel = panel.sort_values(
         "flat_type",
         "month"
     ]
-).reset_index(drop=True)
+).reset_index(
+    drop=True
+)
 
 
 # ==================================================
-# PRICE FEATURES
+# CURRENT PRICE
 # ==================================================
 
 panel["price_now"] = (
     panel["median_price"]
 )
 
+
+# ==================================================
+# PRICE LAGS 1-12 MONTHS
+# ==================================================
+
+print("\nCreating price lags...")
 
 for lag in range(1, 13):
 
@@ -324,16 +244,23 @@ for lag in range(1, 13):
 
 
 # ==================================================
-# SIX-MONTH TARGET
+# DIRECT FORECAST TARGETS 1-6 MONTHS
 # ==================================================
 
-panel["target_price_6m"] = (
-    panel
-    .groupby(
-        ["town", "flat_type"]
-    )["median_price"]
-    .shift(-6)
+print(
+    "Creating direct targets "
+    "for horizons 1-6 months..."
 )
+
+for horizon in range(1, 7):
+
+    panel[f"target_price_{horizon}m"] = (
+        panel
+        .groupby(
+            ["town", "flat_type"]
+        )["median_price"]
+        .shift(-horizon)
+    )
 
 
 # ==================================================
@@ -361,27 +288,19 @@ print(
     f"{panel['month'].max().strftime('%Y-%m')}"
 )
 
-print("\nNew market-state features:")
+print("\nForecast targets created:")
 
-print(
-    "  hdb_rpi"
-)
+for horizon in range(1, 7):
 
-print(
-    "  rpi_quarterly_growth"
-)
+    print(
+        f"  target_price_{horizon}m"
+    )
 
-print(
-    "  rpi_yoy_growth"
-)
+print("\nMarket-state features:")
 
-print(
-    "  transaction_volume"
-)
-
-print(
-    "  volume_growth_3m"
-)
+print("  hdb_rpi")
+print("  rpi_quarterly_growth")
+print("  transaction_volume")
 
 print(
     f"\nSaved to: {OUTPUT_PATH}"
