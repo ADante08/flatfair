@@ -1,26 +1,33 @@
 # FlatFair
 
-FlatFair is a project for the Databricks AI Social Impact Challenge Singapore.
+**Forward-looking HDB resale price forecasting for Singapore**
 
-## Problem
+FlatFair is a machine-learning project developed for the **Databricks AI Social Impact (DAISI) Challenge Singapore**, Track C1: HDB resale market intelligence and affordability.
 
-HDB resale prices vary across towns, flat types, lease lengths, floor areas, and market conditions. FlatFair aims to help users understand historical resale trends and forecast short-term resale price movements.
+Instead of only showing buyers what HDB prices have done historically, FlatFair asks a more useful question:
 
-## Initial MVP
+> **Where are HDB resale prices likely to go next?**
 
-The first prototype will:
+We built a working forecasting pipeline that predicts **median HDB resale prices 1–6 months ahead by town and flat type**.
 
-1. Retrieve official HDB resale transaction data from data.gov.sg.
-2. Clean and transform the data.
-3. Analyse resale price trends by town and flat type.
-4. Train a machine learning model to forecast resale prices up to six months ahead.
-5. Compare the ML model against a simple baseline.
-6. Display the results in an interactive application.
+## Key Result
 
-## Project Structure
+FlatFair beats a strong **persistence baseline** — the assumption that future prices simply remain equal to today's price — at **every forecast horizon from 1 to 6 months**.
 
-- `src/` — data and machine learning code
-- `app/` — application code
-- `data/` — local datasets, not committed to Git
-- `notebooks/` — Databricks notebooks
-- `docs/` — project documentation
+| Horizon | Persistence MAE | FlatFair MAE | Improvement |
+|---|---:|---:|---:|
+| +1 month | S$45,235 | S$37,690 | 16.68% |
+| +2 months | S$47,193 | S$38,146 | **19.17%** |
+| +3 months | S$46,337 | S$39,482 | 14.79% |
+| +4 months | S$46,753 | S$39,434 | 15.66% |
+| +5 months | S$47,569 | S$40,916 | 13.98% |
+| +6 months | S$49,824 | S$42,622 | 14.46% |
+
+**FlatFair reduces MAE by approximately 14–19% across all six horizons, reaching nearly 20% improvement at the +2 month horizon.**
+
+## What FlatFair Predicts
+
+The model predicts monthly median resale prices at the level of:
+
+```text
+month × town × flat type
